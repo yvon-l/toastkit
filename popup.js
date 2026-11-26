@@ -282,8 +282,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // -------------------------------------------------
   // Footer links
   // -------------------------------------------------
-  const BUG_URL = "https://github.com/YvonLabs/toastkit/issues/new";
-  const WEBSITE_URL = "https://yvonlabs.github.io/";
+  const BUG_URL = "https://github.com/yvon-l/toastkit/issues/new";
+  const WEBSITE_URL = "https://kimberly-wood.com/tools/";
 
   footerReportBtn.addEventListener("click", () => {
     chrome.tabs.create({ url: BUG_URL });

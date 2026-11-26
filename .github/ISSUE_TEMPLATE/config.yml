@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
-  - name: 🌐 Visit ToastKit website
-    url: https://yvonlabs.github.io
-    about: Learn more about ToastKit and YvonLabs projects.
+  - name: About ToastKit
+    url: https://kimberly-wood.com/tools/
+    about: What ToastKit does and what it stores.
+  - name: Report a security issue privately
+    url: https://github.com/yvon-l/toastkit/security/advisories/new
+    about: Please don't open a public issue for security problems.

@@ -9,6 +9,13 @@ ToastKit uses semantic-style versioning during pre-1.0:
 
 ---
 
+## [0.2.4] - 2026-11-26
+### Changed
+- Moved to github.com/yvon-l/toastkit; popup links updated
+- Full MIT license text in LICENSE
+- Security reports go through GitHub private reporting
+- Scope label now says "common subdomains", which is what it actually clears
+
 ## [0.2.3] – 2026-01-06
 ### Changed
 - Persisted lightweight user preferences (toast level, scope, and UI options) using Chrome storage
