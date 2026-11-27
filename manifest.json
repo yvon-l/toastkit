@@ -9,7 +9,10 @@
     "contentSettings",
     "storage"
   ],
-  "host_permissions": ["http://*/*", "https://*/*"],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
   "action": {
     "default_title": "ToastKit",
     "default_popup": "popup.html",

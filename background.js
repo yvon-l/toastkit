@@ -30,42 +30,41 @@ function getHostname(url) {
   }
 }
 
-// Very simple "base domain": last two labels
-// e.g. mail.proton.me -> proton.me
-// e.g. app.example.co.uk -> co.uk (not perfect, but good enough for now
-// given the explicit "may sign you out" warning)
+// "Base domain": the registrable part of a hostname, e.g. mail.proton.me -> proton.me.
+// Handles common two-part country suffixes (example.co.uk -> example.co.uk).
+// Returns null for IP addresses and single-label hosts like localhost, where
+// there is no family of subdomains to clear.
+const SECOND_LEVEL = new Set(["co", "com", "net", "org", "gov", "ac", "edu", "ne", "or", "go"]);
+
 function getBaseDomain(hostname) {
   if (!hostname) return null;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) || hostname.includes(":")) return null; // IPv4 / IPv6
   const parts = hostname.split(".");
-  if (parts.length < 2) return hostname;
-  const last2 = parts.slice(-2).join(".");
-  return last2;
+  if (parts.length < 2) return null;
+  const tld = parts[parts.length - 1];
+  const sld = parts[parts.length - 2];
+  const take = tld.length === 2 && SECOND_LEVEL.has(sld) && parts.length >= 3 ? 3 : 2;
+  return parts.slice(-take).join(".");
 }
 
 // Build a list of relevant origins based on scope choice:
-// scope === "origin": just the active tab's exact origin
+// scope === "origin": just the active tab's exact origin (including any port)
 // scope === "family": active origin, base domain, and some common sibling subdomains
 function buildTargetOrigins(tabUrl, scope) {
   const urlObj = new URL(tabUrl);
-  const protocol = urlObj.protocol; // "https:"
-  const host = urlObj.hostname;     // "mail.proton.me"
-  const base = getBaseDomain(host); // "proton.me"
+  const protocol = urlObj.protocol;               // "https:"
+  const port = urlObj.port ? `:${urlObj.port}` : ""; // keep dev-server ports
+  const base = getBaseDomain(urlObj.hostname);    // "proton.me"
 
   const origins = new Set();
 
   // always include the exact origin
-  origins.add(`${protocol}//${host}`);
+  origins.add(urlObj.origin);
 
   if (scope === "family" && base) {
-    // base domain (proton.me)
-    origins.add(`${protocol}//${base}`);
-
-    // common siblings - will no-op safely if they don't exist
-    origins.add(`${protocol}//www.${base}`);
-    origins.add(`${protocol}//mail.${base}`);
-    origins.add(`${protocol}//account.${base}`);
-    origins.add(`${protocol}//auth.${base}`);
-    origins.add(`${protocol}//login.${base}`);
+    for (const sub of ["", "www.", "mail.", "account.", "auth.", "login."]) {
+      origins.add(`${protocol}//${sub}${base}${port}`);
+    }
   }
 
   return Array.from(origins);
@@ -322,14 +321,15 @@ async function resetCurrentSite(tab, flags) {
 
 // ----------------------
 // Keyboard shortcut handler
-// We'll treat the keyboard shortcut like "Dark + subdomains"
+// The keyboard shortcut does a Dark reset of the current site only, as its
+// description says. The wider scope can sign you out, so it stays a choice in the popup.
 // ----------------------
 chrome.commands.onCommand.addListener(async (command) => {
   if (command === "reset-current-site") {
     const tab = await getActiveTab();
     try {
       await resetCurrentSite(tab, {
-        scope: "family",
+        scope: "origin",
         wipeCookies: true,
         wipeStorage: true,
         wipeSW: true,
@@ -345,7 +345,8 @@ chrome.commands.onCommand.addListener(async (command) => {
 // Message bridge for popup.js
 // popup.js calls chrome.runtime.sendMessage({ type: "RESET_NOW", payload: {...} })
 // ----------------------
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id) return;
   if (msg && msg.type === "RESET_NOW") {
     (async () => {
       try {

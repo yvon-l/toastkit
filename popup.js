@@ -1,3 +1,10 @@
+// Escape text before it goes into innerHTML (error messages can contain page addresses).
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const runBtn = document.getElementById("run");
   const statsEl = document.getElementById("stats");
@@ -261,7 +268,7 @@ document.addEventListener("DOMContentLoaded", () => {
         } else {
           runBtn.textContent = "Error";
           statsEl.innerHTML = `
-            <span style="color:#dc2626;font-weight:600;">${msg}</span>
+            <span style="color:#dc2626;font-weight:600;">${escHtml(msg)}</span>
           `;
         }
       }
@@ -269,7 +276,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const msg = err && err.message ? err.message : "Failed";
       runBtn.textContent = "Error";
       statsEl.innerHTML = `
-        <span style="color:#dc2626;font-weight:600;">${msg}</span>
+        <span style="color:#dc2626;font-weight:600;">${escHtml(msg)}</span>
       `;
     }
 

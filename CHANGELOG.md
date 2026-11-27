@@ -10,6 +10,13 @@ ToastKit uses semantic-style versioning during pre-1.0:
 ---
 
 ## [0.2.4] - 2026-11-26
+### Fixed
+- Error messages in the popup are escaped before display, so a page address in an error can't inject markup
+- Storage, service workers and permissions were not cleared on sites with a port in the address (like a local dev server on :3000), because the port was dropped. Cookies were fine
+- The wider scope no longer treats country suffixes like .co.uk as a site, and is skipped for IP addresses and localhost
+- Alt+T now resets the current site only, as its description says. It used to include the parent domain and common subdomains, which could sign you out of more than you expected
+### Security
+- Messages to the background script are only accepted from ToastKit itself
 ### Changed
 - Moved to github.com/yvon-l/toastkit; popup links updated
 - Full MIT license text in LICENSE
