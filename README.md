@@ -48,6 +48,18 @@ Just your settings: level, scope and the Advanced checkboxes. They're in Chrome 
 2. Go to `chrome://extensions/` and turn on Developer mode.
 3. Click Load unpacked and pick the folder.
 
+## Tests
+
+The tests load the extension into a real Chromium and check that a reset clears one site completely (including sites on a port) and leaves other sites alone, and which domains each scope covers. They run on every push.
+
+```
+npm ci
+npx playwright install chromium
+npm test
+```
+
+You don't need any of this to use or load the extension.
+
 ## Bugs and security issues
 
 Bugs go in [issues](https://github.com/yvon-l/toastkit/issues). For anything security related, use [private reporting](https://github.com/yvon-l/toastkit/security/advisories/new) instead. More in [SECURITY.md](SECURITY.md).

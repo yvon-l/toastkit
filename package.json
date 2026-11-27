@@ -1,0 +1,12 @@
+{
+  "name": "toastkit",
+  "private": true,
+  "description": "Tests for the ToastKit Chrome extension. Not needed to use or load it.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 --test-timeout=60000 tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

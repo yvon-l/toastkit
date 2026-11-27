@@ -17,6 +17,8 @@ ToastKit uses semantic-style versioning during pre-1.0:
 - Alt+T now resets the current site only, as its description says. It used to include the parent domain and common subdomains, which could sign you out of more than you expected
 ### Security
 - Messages to the background script are only accepted from ToastKit itself
+### Added
+- Automated tests, run on every push
 ### Changed
 - Moved to github.com/yvon-l/toastkit; popup links updated
 - Full MIT license text in LICENSE
