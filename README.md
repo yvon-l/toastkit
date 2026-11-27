@@ -39,7 +39,6 @@ Just your settings: level, scope and the Advanced checkboxes. They're in Chrome 
 - `browsingData`, to clear storage and service workers for the site
 - `cookies`, to count and remove the site's cookies
 - `contentSettings`, to reset the site's permissions
-- `tabs`, to get the address of the tab you're on
 - `storage`, for your settings
 - Access to http and https sites, which the cookie and permission APIs need
 

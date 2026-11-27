@@ -13,6 +13,7 @@ ToastKit uses semantic-style versioning during pre-1.0:
 ### Changed
 - Moved to github.com/yvon-l/toastkit; popup links updated
 - Full MIT license text in LICENSE
+- Removed the tabs permission, which it never needed (site access already covers the current tab's address)
 - Security reports go through GitHub private reporting
 - Icons and README logo now have transparent corners (no white edges in the toolbar)
 - Scope label now says "common subdomains", which is what it actually clears
