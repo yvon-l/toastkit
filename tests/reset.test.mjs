@@ -85,3 +85,16 @@ test("the popup offers permissions and site settings in Chrome", async () => {
   }));
   assert.deepEqual(r, { permsHidden: false, settingsHidden: false, grantHidden: true });
 });
+
+test("the popup reports a reset as text", async () => {
+  await siteA.bringToFront();
+  const r = await helper.evaluate(async () => {
+    document.getElementById("run").click();
+    await new Promise(r => setTimeout(r, 1000));
+    const s = document.getElementById("stats");
+    return { lines: [...s.children].map(e => e.textContent), tags: [...s.querySelectorAll("*")].map(e => e.tagName) };
+  });
+  assert.equal(r.lines[0], `Toasted Cleaned: http://127.0.0.1:${port}`);
+  assert.match(r.lines[1], /^Level: light · Wiped: cookies \(\d+\/\d+\) · scope: current site$/);
+  assert.deepEqual(r.tags, ["DIV", "SPAN", "STRONG", "DIV"]);
+});
