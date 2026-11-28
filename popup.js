@@ -18,6 +18,18 @@ document.addEventListener("DOMContentLoaded", () => {
   const optPerms = document.getElementById("optPerms");
   const optReload = document.getElementById("optReload");
 
+  const grantBtn = document.getElementById("grantBtn");
+
+  // Firefox has no API for resetting a site's permissions and won't let an
+  // extension open its settings pages, so those two are left out there.
+  const canResetPerms = typeof chrome.contentSettings !== "undefined";
+  if (!canResetPerms) {
+    optPerms.checked = false;
+    document.getElementById("permsRow").classList.add("hidden");
+    siteSettingsBtn.classList.add("hidden");
+    document.getElementById("darkLabel").textContent = "Dark — cookies + storage + service workers";
+  }
+
   // Toast level radios (Light / Medium / Dark)
   const levelRadios = document.querySelectorAll('input[name="level"]');
 
@@ -44,7 +56,7 @@ document.addEventListener("DOMContentLoaded", () => {
       optCookies: !!optCookies.checked,
       optStorage: !!optStorage.checked,
       optSW: !!optSW.checked,
-      optPerms: !!optPerms.checked,
+      optPerms: canResetPerms && !!optPerms.checked,
       optReload: !!optReload.checked
     };
   }
@@ -63,7 +75,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (typeof state.optCookies === "boolean") optCookies.checked = state.optCookies;
     if (typeof state.optStorage === "boolean") optStorage.checked = state.optStorage;
     if (typeof state.optSW === "boolean") optSW.checked = state.optSW;
-    if (typeof state.optPerms === "boolean") optPerms.checked = state.optPerms;
+    if (typeof state.optPerms === "boolean") optPerms.checked = canResetPerms && state.optPerms;
     if (typeof state.optReload === "boolean") optReload.checked = state.optReload;
   }
 
@@ -102,7 +114,7 @@ document.addEventListener("DOMContentLoaded", () => {
       optCookies.checked = true;
       optStorage.checked = true;
       optSW.checked = true;
-      optPerms.checked = true;
+      optPerms.checked = canResetPerms;
     }
     // We intentionally do not touch optReload here.
   }
@@ -167,6 +179,32 @@ document.addEventListener("DOMContentLoaded", () => {
         )}`
       });
     }
+  });
+
+  // -------------------------------------------------
+  // Access to websites
+  // Firefox doesn't give an extension access to websites until you allow it,
+  // and both browsers let you take it away. Cookies can't be touched without it.
+  // -------------------------------------------------
+  const ALL_SITES = { origins: chrome.runtime.getManifest().host_permissions };
+
+  function showNeedsAccess() {
+    grantBtn.classList.remove("hidden");
+    statsEl.innerHTML = `
+      <div style="color:#dc2626;font-weight:600;">ToastKit can't reach this site</div>
+      <div class="hint">It needs access to websites to remove their cookies. Allow it, then toast again.</div>
+    `;
+  }
+
+  // The request has to start straight from the click, with nothing awaited first.
+  grantBtn.addEventListener("click", () => {
+    chrome.permissions.request(ALL_SITES).then(granted => {
+      if (!granted) return;
+      grantBtn.classList.add("hidden");
+      statsEl.innerHTML = `<div class="hint">Access allowed. Toast away.</div>`;
+    }).catch(() => {
+      statsEl.innerHTML = `<div class="hint">Couldn't ask for access.</div>`;
+    });
   });
 
   // -------------------------------------------------
@@ -259,7 +297,10 @@ document.addEventListener("DOMContentLoaded", () => {
       } else {
         const msg = resp && resp.error ? resp.error : "Failed";
 
-        if (msg.includes("Unsupported URL")) {
+        if (msg === "No site access") {
+          runBtn.textContent = originalText;
+          showNeedsAccess();
+        } else if (msg.includes("Unsupported URL")) {
           runBtn.textContent = originalText;
           statsEl.innerHTML = `
             <div style="color:#dc2626;font-weight:600;">Unsupported URL</div>
