@@ -31,7 +31,8 @@ export function firefoxManifest(chrome) {
   m.browser_specific_settings = {
     gecko: {
       id: FIREFOX_ID,
-      strict_min_version: "140.0",
+      // 142 is the first Firefox that reads the data statement on Android too.
+      strict_min_version: "142.0",
       data_collection_permissions: { required: ["none"] }
     }
   };

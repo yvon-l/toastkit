@@ -18,6 +18,8 @@ ToastKit uses semantic-style versioning during pre-1.0:
 ### Changed
 - If access to websites has been turned off, the popup says ToastKit can't reach the site and shows an Allow access button, instead of reporting a reset that cleared no cookies. Alt+T shows a ! on the toolbar button
 - In Firefox, the popup leaves out resetting permissions and the site settings button, which Firefox doesn't let an extension do
+### Security
+- The popup builds what it shows from text, not HTML, so nothing from a page address or an error can become markup (it was escaped before)
 
 ## [0.2.4] - 2026-11-26
 ### Fixed

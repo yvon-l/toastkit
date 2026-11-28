@@ -1,13 +1,17 @@
-// Escape text before it goes into innerHTML (error messages can contain page addresses).
-function escHtml(str) {
-  return String(str)
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+// The status area is built from elements with textContent, never HTML, so a
+// page address or error message can't add markup.
+function el(tag, className, text) {
+  const e = document.createElement(tag);
+  if (className) e.className = className;
+  if (text != null) e.textContent = text;
+  return e;
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   const runBtn = document.getElementById("run");
   const statsEl = document.getElementById("stats");
+  const showStats = (...nodes) => statsEl.replaceChildren(...nodes);
+  const showError = (title, hint) => showStats(el("div", "error-line", title), ...(hint ? [el("div", "hint", hint)] : []));
   const versionLabel = document.getElementById("versionLabel");
   const siteSettingsBtn = document.getElementById("siteSettings");
 
@@ -190,10 +194,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function showNeedsAccess() {
     grantBtn.classList.remove("hidden");
-    statsEl.innerHTML = `
-      <div style="color:#dc2626;font-weight:600;">ToastKit can't reach this site</div>
-      <div class="hint">It needs access to websites to remove their cookies. Allow it, then toast again.</div>
-    `;
+    showError("ToastKit can't reach this site", "It needs access to websites to remove their cookies. Allow it, then toast again.");
   }
 
   // The request has to start straight from the click, with nothing awaited first.
@@ -201,9 +202,9 @@ document.addEventListener("DOMContentLoaded", () => {
     chrome.permissions.request(ALL_SITES).then(granted => {
       if (!granted) return;
       grantBtn.classList.add("hidden");
-      statsEl.innerHTML = `<div class="hint">Access allowed. Toast away.</div>`;
+      showStats(el("div", "hint", "Access allowed. Toast away."));
     }).catch(() => {
-      statsEl.innerHTML = `<div class="hint">Couldn't ask for access.</div>`;
+      showStats(el("div", "hint", "Couldn't ask for access."));
     });
   });
 
@@ -270,26 +271,13 @@ document.addEventListener("DOMContentLoaded", () => {
             ? "scope: this site + subdomains"
             : "scope: current site";
 
-        function escapeHtml(str) {
-          return String(str)
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#39;");
-        }
-
         const summaryLine =
-          `Level: ${escapeHtml(level)} · Wiped: ${escapeHtml(wipedSummary)} · ${escapeHtml(scopeLabel)}` +
+          `Level: ${level} · Wiped: ${wipedSummary} · ${scopeLabel}` +
           (doReload ? " · Tab reloaded" : "");
 
-        statsEl.innerHTML = `
-          <div>
-            <span class="badge-flame">Toasted</span>
-            <strong>Cleaned:</strong> ${escapeHtml(resp.origin)}
-          </div>
-          <div class="hint">${summaryLine}</div>
-        `;
+        const head = el("div");
+        head.append(el("span", "badge-flame", "Toasted"), " ", el("strong", null, "Cleaned:"), " ", String(resp.origin));
+        showStats(head, el("div", "hint", summaryLine));
 
         if (doReload) {
           chrome.tabs.reload();
@@ -302,23 +290,16 @@ document.addEventListener("DOMContentLoaded", () => {
           showNeedsAccess();
         } else if (msg.includes("Unsupported URL")) {
           runBtn.textContent = originalText;
-          statsEl.innerHTML = `
-            <div style="color:#dc2626;font-weight:600;">Unsupported URL</div>
-            <div class="hint">This page can't be toasted. Switch to a normal site (https://) and try again.</div>
-          `;
+          showError("Unsupported URL", "This page can't be toasted. Switch to a normal site (https://) and try again.");
         } else {
           runBtn.textContent = "Error";
-          statsEl.innerHTML = `
-            <span style="color:#dc2626;font-weight:600;">${escHtml(msg)}</span>
-          `;
+          showError(String(msg));
         }
       }
     } catch (err) {
       const msg = err && err.message ? err.message : "Failed";
       runBtn.textContent = "Error";
-      statsEl.innerHTML = `
-        <span style="color:#dc2626;font-weight:600;">${escHtml(msg)}</span>
-      `;
+      showError(String(msg));
     }
 
     setTimeout(() => {
