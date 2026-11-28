@@ -101,8 +101,18 @@ async function openTab(address, { userContextId = 0, select = false } = {}) {
 async function selectInBrowser(handle) {
   driver.setContext(firefox.Context.CHROME);
   try {
-    await driver.executeScript(`const { TabManager } = ChromeUtils.importESModule("chrome://remote/content/shared/TabManager.sys.mjs");
-      const t = [...gBrowser.tabs].find(t => TabManager.getIdForBrowser(t.linkedBrowser) === arguments[0]);
+    await driver.executeScript(`let idOf = null, seen = [];
+      for (const [path, name] of [
+        ["chrome://remote/content/shared/NavigableManager.sys.mjs", "NavigableManager"],
+        ["chrome://remote/content/shared/TabManager.sys.mjs", "TabManager"]]) {
+        try {
+          const M = ChromeUtils.importESModule(path)[name];
+          seen.push(name + ": " + Object.getOwnPropertyNames(M).join(" "));
+          if (typeof M.getIdForBrowser === "function") { idOf = b => M.getIdForBrowser(b); break; }
+        } catch (e) { seen.push(name + ": " + e); }
+      }
+      if (!idOf) throw new Error("no way to read window handles. " + seen.join(" | "));
+      const t = [...gBrowser.tabs].find(t => idOf(t.linkedBrowser) === arguments[0]);
       if (!t) throw new Error("no tab for handle " + arguments[0]);
       gBrowser.selectedTab = t;`, handle);
   } finally {
