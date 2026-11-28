@@ -19,6 +19,6 @@ Include the ToastKit version, your browser version, what you did, and what happe
 
 ## Supported versions
 
-Only the current Chrome Web Store release gets fixes. Fixes land on `main` and ship as a patch release.
+Only the current releases on the Chrome Web Store and Firefox Add-ons get fixes. Fixes land on `main` and ship as a patch release.
 
 What ToastKit stores, and why, is described at https://kimberly-wood.com/privacy/#browser-extensions

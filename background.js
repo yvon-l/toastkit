@@ -3,6 +3,13 @@
 // We'll keep a timer so we can revert the icon after we show the burnt/flame icon.
 let iconResetTimerId = null;
 
+// Firefox has the same extension APIs under chrome.*, with a few differences
+// handled below: storage is cleared by host name rather than origin, cookies
+// can live in containers or be isolated by first-party domain, and there is no
+// API for resetting a site's permissions.
+const FIREFOX = typeof browser !== "undefined" && typeof browser.runtime?.getBrowserInfo === "function";
+const CAN_RESET_PERMS = typeof chrome.contentSettings !== "undefined";
+
 // ----------------------
 // Utility: get active tab
 // ----------------------
@@ -78,9 +85,14 @@ function patternFromOrigin(origin) {
 // Cookies: count + clear
 // We try multiple candidate origins and cookie domains.
 // ----------------------
-async function getCookiesForOrigin(origin) {
+async function getCookiesForOrigin(origin, storeId) {
+  const query = { url: origin };
+  if (storeId) query.storeId = storeId;
+  // In Firefox, null matches cookies whatever their first-party domain, so
+  // first-party isolation doesn't hide them. Chrome doesn't know the field.
+  if (FIREFOX) query.firstPartyDomain = null;
   try {
-    const cookies = await chrome.cookies.getAll({ url: origin });
+    const cookies = await chrome.cookies.getAll(query);
     return cookies || [];
   } catch {
     return [];
@@ -106,16 +118,16 @@ function cookieRemovalUrlFromCookie(cookie, fallbackOrigin) {
   return `${fallbackOrigin}${cookie.path || "/"}`;
 }
 
-async function clearCookiesForOrigins(origins) {
+async function clearCookiesForOrigins(origins, storeId) {
   let totalBefore = 0;
   let totalCleared = 0;
 
   // collect all cookies across candidate origins and dedupe
-  const cookieKey = c => `${c.domain}|${c.path}|${c.name}|${c.storeId || ""}`;
+  const cookieKey = c => `${c.domain}|${c.path}|${c.name}|${c.storeId || ""}|${c.firstPartyDomain || ""}|${JSON.stringify(c.partitionKey || null)}`;
   const allCookiesMap = new Map();
 
   for (const origin of origins) {
-    const cookies = await getCookiesForOrigin(origin);
+    const cookies = await getCookiesForOrigin(origin, storeId);
     for (const c of cookies) {
       totalBefore++;
       allCookiesMap.set(cookieKey(c), { cookie: c, origin });
@@ -126,11 +138,10 @@ async function clearCookiesForOrigins(origins) {
   for (const { cookie, origin } of allCookiesMap.values()) {
     const removalUrl = cookieRemovalUrlFromCookie(cookie, origin);
     try {
-      const res = await chrome.cookies.remove({
-        url: removalUrl,
-        name: cookie.name,
-        storeId: cookie.storeId
-      });
+      const details = { url: removalUrl, name: cookie.name, storeId: cookie.storeId };
+      if (FIREFOX) details.firstPartyDomain = cookie.firstPartyDomain || "";
+      if (cookie.partitionKey) details.partitionKey = cookie.partitionKey;
+      const res = await chrome.cookies.remove(details);
       if (res) {
         totalCleared++;
       }
@@ -146,8 +157,84 @@ async function clearCookiesForOrigins(origins) {
 // Storage + service workers clearing
 // We'll call browsingData.remove() on each target origin.
 // ----------------------
-async function clearStorageAndSW(origins, opts) {
+// Firefox's browsingData takes host names, not origins, and only for some
+// data types: localStorage, IndexedDB and service workers. A host name covers
+// every scheme and port of that host, and in testing it didn't clear storage
+// for addresses with a port at all. So for the site in the tab, ToastKit
+// clears storage from inside the page, which is exact to the origin, port
+// included, and covers Cache Storage too. Host names are only used for the
+// other hosts of the wider scope.
+function firefoxHostnames(origins) {
+  const hosts = new Set();
+  for (const o of origins) {
+    const h = getHostname(o);
+    if (h) hosts.add(h.replace(/^\[|\]$/g, ""));
+  }
+  return Array.from(hosts);
+}
+
+// Runs in the page itself (Firefox only), so it reaches exactly that origin's storage.
+function clearThisPage(storage, serviceWorkers) {
+  return (async () => {
+    if (storage) {
+      try { localStorage.clear(); } catch {}
+      try {
+        for (const d of await indexedDB.databases()) {
+          if (!d.name) continue;
+          // An open connection blocks deletion until the page closes it or
+          // reloads; the database goes then.
+          await new Promise(done => {
+            const req = indexedDB.deleteDatabase(d.name);
+            req.onsuccess = req.onerror = req.onblocked = () => done();
+          });
+        }
+      } catch {}
+      try { for (const k of await caches.keys()) await caches.delete(k); } catch {}
+    }
+    if (serviceWorkers) {
+      try { for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister(); } catch {}
+    }
+    return true;
+  })();
+}
+
+async function clearStorageAndSWFirefox(tab, origins, opts) {
+  if (!opts.storage && !opts.serviceWorkers) return { storageCleared: false, swCleared: false };
+  let inPage = false;
+  try {
+    // The page's own code could stall this, so it gets a few seconds.
+    const run = chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: "MAIN",
+      func: clearThisPage,
+      args: [!!opts.storage, !!opts.serviceWorkers]
+    });
+    const timeout = new Promise(done => setTimeout(() => done([]), 5000));
+    const [res] = await Promise.race([run, timeout]);
+    inPage = res?.result === true;
+  } catch {
+    // Some pages can't be scripted (the add-ons site, reader view). The host
+    // names below are the fallback.
+  }
+
+  const current = getOrigin(tab.url);
+  const others = inPage ? origins.filter(o => o !== current) : origins;
+  const dataToRemove = {};
+  if (opts.storage) {
+    dataToRemove.localStorage = true;
+    dataToRemove.indexedDB = true;
+  }
+  if (opts.serviceWorkers) dataToRemove.serviceWorkers = true;
+  const hostnames = firefoxHostnames(others);
+  if (hostnames.length) {
+    await chrome.browsingData.remove({ hostnames }, dataToRemove);
+  }
+  return { storageCleared: !!opts.storage, swCleared: !!opts.serviceWorkers };
+}
+
+async function clearStorageAndSW(tab, origins, opts) {
   // opts: { storage:boolean, serviceWorkers:boolean }
+  if (FIREFOX) return clearStorageAndSWFirefox(tab, origins, opts);
   let storageRan = false;
   let swRan = false;
 
@@ -193,6 +280,7 @@ function setAsk(api, pattern) {
 
 async function resetPermissionsForOrigins(origins) {
   let ran = false;
+  if (!CAN_RESET_PERMS) return ran;
   for (const origin of origins) {
     const pat = patternFromOrigin(origin);
     await Promise.all([
@@ -204,6 +292,25 @@ async function resetPermissionsForOrigins(origins) {
     ran = true;
   }
   return ran;
+}
+
+// Access to the site's address, which the cookies API needs. Match patterns
+// have no port, so the host is enough.
+async function hasSiteAccess(url) {
+  try {
+    const u = new URL(url);
+    return await chrome.permissions.contains({ origins: [`${u.protocol}//${u.hostname}/*`] });
+  } catch {
+    return false;
+  }
+}
+
+async function hasAllSitesAccess() {
+  try {
+    return await chrome.permissions.contains({ origins: chrome.runtime.getManifest().host_permissions });
+  } catch {
+    return false;
+  }
 }
 
 // ----------------------
@@ -255,14 +362,27 @@ function showToastedIcon() {
 // scope: "origin" | "family"
 // ----------------------
 async function resetCurrentSite(tab, flags) {
-  if (!tab || !tab.url) throw new Error("No active tab");
+  if (!tab) throw new Error("No active tab");
+  // Without access to a site, Firefox doesn't tell an extension the tab's
+  // address at all. With access to every site, a missing address means a page
+  // that isn't a website.
+  if (!tab.url) {
+    throw new Error((await hasAllSitesAccess()) ? "Unsupported URL" : "No site access");
+  }
 
   const origin = getOrigin(tab.url);
   const hostname = getHostname(tab.url);
 
-  if (!origin || origin.startsWith("chrome")) {
-    // We do not/cannot wipe chrome:// or chrome-extension:// pages.
+  if (!origin || !/^https?:\/\//.test(origin)) {
+    // Only websites: not chrome://, about:, moz-extension:// or file pages.
     throw new Error("Unsupported URL");
+  }
+
+  // People can take away an extension's access to websites (Firefox doesn't
+  // grant it until they allow it). Without it no cookies can be read or
+  // removed, so say so instead of reporting a reset that didn't happen.
+  if (flags.wipeCookies && !(await hasSiteAccess(tab.url))) {
+    throw new Error("No site access");
   }
 
   // Build the set of origins we're allowed to touch based on scope.
@@ -272,20 +392,21 @@ async function resetCurrentSite(tab, flags) {
   let cookiesBefore = 0;
   let cookiesCleared = 0;
   if (flags.wipeCookies) {
-    const cookieResult = await clearCookiesForOrigins(targetOrigins);
+    // tab.cookieStoreId is Firefox's: the container or private window the tab is in.
+    const cookieResult = await clearCookiesForOrigins(targetOrigins, tab.cookieStoreId);
     cookiesBefore = cookieResult.before;
     cookiesCleared = cookieResult.cleared;
   }
 
   // 2. Storage + service workers
-  const storageResult = await clearStorageAndSW(targetOrigins, {
+  const storageResult = await clearStorageAndSW(tab, targetOrigins, {
     storage: flags.wipeStorage,
     serviceWorkers: flags.wipeSW
   });
 
   // 3. Permissions reset
   let permsRan = false;
-  if (flags.wipePerms) {
+  if (flags.wipePerms && CAN_RESET_PERMS) {
     permsRan = await resetPermissionsForOrigins(targetOrigins);
   }
 
@@ -313,7 +434,7 @@ async function resetCurrentSite(tab, flags) {
       cleared: storageResult.swCleared
     },
     perms: {
-      ran: !!flags.wipePerms,
+      ran: !!flags.wipePerms && CAN_RESET_PERMS,
       reset: permsRan
     }
   };
@@ -335,8 +456,10 @@ chrome.commands.onCommand.addListener(async (command) => {
         wipeSW: true,
         wipePerms: true
       });
-    } catch {
-      // Ignore errors here (e.g. Unsupported URL)
+    } catch (e) {
+      // Nothing to do on pages that aren't websites. Without access to the
+      // site, show it on the button so a shortcut press doesn't look like it worked.
+      if (tab && String(e && e.message) === "No site access") await flashBadge(tab.id, "!");
     }
   }
 });

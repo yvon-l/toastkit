@@ -76,3 +76,12 @@ test("pages that aren't websites are refused", async () => {
   assert.equal(r.ok, false);
   await siteA.goto(`http://127.0.0.1:${port}/`);
 });
+
+test("the popup offers permissions and site settings in Chrome", async () => {
+  const r = await helper.evaluate(() => ({
+    permsHidden: document.getElementById("permsRow").classList.contains("hidden"),
+    settingsHidden: document.getElementById("siteSettings").classList.contains("hidden"),
+    grantHidden: document.getElementById("grantBtn").classList.contains("hidden"),
+  }));
+  assert.deepEqual(r, { permsHidden: false, settingsHidden: false, grantHidden: true });
+});

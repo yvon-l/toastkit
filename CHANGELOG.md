@@ -9,6 +9,16 @@ ToastKit uses semantic-style versioning during pre-1.0:
 
 ---
 
+## [0.3.0] - 2026-11-27
+### Added
+- A Firefox version, built from the same code. `npm run package` makes the Chrome and Firefox store zips from one manifest
+- In Firefox, the page's own storage is cleared from inside the page, so it's exact to the origin (port included) and covers Cache Storage, which Firefox's own API can't do by site
+- In Firefox, cookies are cleared in the container or private window the tab is in, and first-party isolation doesn't hide any
+- Tests that run the Firefox build in real Firefox on every push
+### Changed
+- If access to websites has been turned off, the popup says ToastKit can't reach the site and shows an Allow access button, instead of reporting a reset that cleared no cookies. Alt+T shows a ! on the toolbar button
+- In Firefox, the popup leaves out resetting permissions and the site settings button, which Firefox doesn't let an extension do
+
 ## [0.2.4] - 2026-11-26
 ### Fixed
 - Error messages in the popup are escaped before display, so a page address in an error can't inject markup

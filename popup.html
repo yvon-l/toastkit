@@ -167,6 +167,9 @@
         font-size: 12px;
       }
 
+      .hidden {
+        display: none !important;
+      }
       .secondary:hover {
         border-color: #cbd5e1;
       }
@@ -267,7 +270,7 @@
                 </label>
                 <label class="row">
                   <input type="radio" name="level" value="dark" />
-                  Dark — cookies + storage + service workers + permissions
+                  <span id="darkLabel">Dark — cookies + storage + service workers + permissions</span>
                 </label>
               </div>
             </fieldset>
@@ -292,6 +295,13 @@
             <div class="actions">
               <button id="run" class="btn">TOAST THIS SITE</button>
               <button
+                id="grantBtn"
+                class="secondary hidden"
+                title="Let ToastKit read and remove the cookies of the sites you toast"
+              >
+                Allow access to websites
+              </button>
+              <button
                 id="siteSettings"
                 class="secondary"
                 title="Open Chrome site settings"
@@ -312,13 +322,13 @@
                 </label>
                 <label class="row">
                   <input id="optStorage" type="checkbox" />
-                  LocalStorage, IndexedDB, Cache Storage
+                  <span id="storageLabel">LocalStorage, IndexedDB, Cache Storage</span>
                 </label>
                 <label class="row">
                   <input id="optSW" type="checkbox" />
                   Service workers
                 </label>
-                <label class="row">
+                <label class="row" id="permsRow">
                   <input id="optPerms" type="checkbox" />
                   Ask again for location / camera / mic / notifications
                 </label>
