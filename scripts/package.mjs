@@ -18,12 +18,14 @@ export const FIREFOX_DESCRIPTION = "Clear cookies, storage and service workers f
 
 // Firefox runs background code as a background script, not a service worker,
 // and needs an add-on ID and a statement that the extension collects no data.
-// It has no contentSettings API, so that permission is left out. Desktop only:
+// It has no contentSettings API, so that permission is left out, and it
+// needs scripting to clear storage exactly for the page's origin. Desktop only:
 // the toolbar popup and Alt+T are what ToastKit is.
 export function firefoxManifest(chrome) {
   const m = structuredClone(chrome);
   delete m.minimum_chrome_version;
-  m.permissions = m.permissions.filter(p => p !== "contentSettings");
+  // scripting clears storage from inside the page (see background.js).
+  m.permissions = [...m.permissions.filter(p => p !== "contentSettings"), "scripting"];
   m.description = FIREFOX_DESCRIPTION;
   m.background = { scripts: ["background.js"] };
   m.browser_specific_settings = {

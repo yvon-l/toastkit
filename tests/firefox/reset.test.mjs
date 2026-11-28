@@ -1,5 +1,6 @@
 // End-to-end tests in real Firefox: the Firefox build, and a local server
-// answering for three made-up sites (site.test, sub.site.test, other.test).
+// answering, as Firefox's proxy, for made-up sites (site.test, sub.site.test,
+// other.test), so their addresses have no port, like real sites.
 // Needs Firefox and geckodriver (GitHub's Ubuntu runners have both); skipped
 // where Firefox isn't installed.
 //
@@ -33,14 +34,15 @@ const HOSTS = ["site.test", "sub.site.test", "other.test"];
 
 let server, port, driver, webTab, helperTab, activeTab;
 const pause = ms => new Promise(r => setTimeout(r, ms));
-const url = host => `http://${host}:${port}/`;
+const url = host => `http://${host}/`;
 
 before(async () => {
   if (skip) return;
   execFileSync("node", [join(EXT, "scripts", "package.mjs")]);
   assert.ok(existsSync(XPI));
   server = http.createServer((req, res) => {
-    if (req.url === "/sw.js") {
+    // As a proxy it's asked for whole addresses: http://site.test/sw.js
+    if (new URL(req.url, "http://proxy/").pathname === "/sw.js") {
       res.setHeader("Content-Type", "text/javascript");
       return res.end("self.addEventListener('fetch', () => {});");
     }
@@ -54,9 +56,12 @@ before(async () => {
     .addArguments("-headless")
     // A fixed internal ID, so the tests know the extension's page addresses.
     .setPreference("extensions.webextensions.uuids", JSON.stringify({ [FIREFOX_ID]: UUID }))
-    // The made-up sites resolve to this machine, and count as secure so they
-    // can use Cache Storage and service workers over plain http.
-    .setPreference("network.dns.localDomains", HOSTS.join(","))
+    // Every http request goes to the test server, and the made-up sites count
+    // as secure so they can use Cache Storage and service workers over http.
+    .setPreference("network.proxy.type", 1)
+    .setPreference("network.proxy.http", "127.0.0.1")
+    .setPreference("network.proxy.http_port", port)
+    .setPreference("network.proxy.no_proxies_on", "")
     .setPreference("dom.securecontext.allowlist", HOSTS.join(","))
     .setPreference("dom.serviceWorkers.testing.enabled", true)
     .setPreference("privacy.userContext.enabled", true);
@@ -196,7 +201,7 @@ test("Dark clears one site in Firefox and leaves another site alone", { skip }, 
   await goto("site.test");
   const r = await reset(DARK);
   assert.equal(r.ok, true, JSON.stringify(r));
-  assert.equal(r.origin, `http://site.test:${port}`);
+  assert.equal(r.origin, "http://site.test");
   assert.equal(r.cookies.cleared, 2);
   assert.equal(r.perms.ran, false, "Firefox can't reset permissions, so it doesn't claim to");
   await pause(1000);
@@ -205,8 +210,28 @@ test("Dark clears one site in Firefox and leaves another site alone", { skip }, 
   console.log("# state after Dark on site.test: " + JSON.stringify(after));
   assert.deepEqual(after["site.test"], EMPTY);
   assert.deepEqual(after["other.test"], FULL);
-  // A host-only cookie on a subdomain is its own; the current-site scope leaves it.
-  assert.equal(after["sub.site.test"].cookie, "a=1; b=2");
+  // A subdomain is its own site: current site only leaves it alone.
+  assert.deepEqual(after["sub.site.test"], FULL);
+});
+
+test("current site only keeps the port in Firefox, for storage", { skip }, async () => {
+  await goto("other.test");
+  await seed(false);
+  await goto("other.test:8080");
+  assert.equal(await seed(false), "ok");
+  const r = await reset(DARK);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.origin, "http://other.test:8080");
+  await pause(1000);
+  const ported = await stateOf("other.test:8080");
+  const plain = await stateOf("other.test");
+  console.log("# with a port: " + JSON.stringify({ ported, plain }));
+  assert.deepEqual(ported, EMPTY);
+  // Cookies ignore ports, so those go on both. Storage is the origin's own.
+  assert.equal(plain.cookie, "");
+  assert.equal(plain.localStorage, "v");
+  assert.equal(plain.indexedDB, true);
+  assert.equal(plain.cacheStorage, true);
 });
 
 test("Light clears cookies and keeps storage in Firefox", { skip }, async () => {
@@ -228,8 +253,14 @@ test("the wider scope clears the parent domain and its usual subdomains in Firef
   assert.equal(r.ok, true, JSON.stringify(r));
   await pause(1000);
   const s = await stateOf("site.test");
+  const sub = await stateOf("sub.site.test");
+  console.log("# wider scope from sub.site.test: " + JSON.stringify({ "site.test": s, "sub.site.test": sub }));
+  assert.deepEqual(sub, EMPTY);
+  // The parent domain is cleared by host name, which Firefox does for
+  // localStorage and IndexedDB but not Cache Storage.
   assert.equal(s.cookie, "");
   assert.equal(s.localStorage, null);
+  assert.equal(s.indexedDB, false);
 });
 
 test("a container tab's cookies are cleared, and the same site outside it is left alone", { skip }, async () => {

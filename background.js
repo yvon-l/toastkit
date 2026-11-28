@@ -157,9 +157,13 @@ async function clearCookiesForOrigins(origins, storeId) {
 // Storage + service workers clearing
 // We'll call browsingData.remove() on each target origin.
 // ----------------------
-// Firefox takes host names, not origins, and only for some data types:
-// localStorage, IndexedDB and service workers. A host name covers every
-// scheme and port of that host.
+// Firefox's browsingData takes host names, not origins, and only for some
+// data types: localStorage, IndexedDB and service workers. A host name covers
+// every scheme and port of that host, and in testing it didn't clear storage
+// for addresses with a port at all. So for the site in the tab, ToastKit
+// clears storage from inside the page, which is exact to the origin, port
+// included, and covers Cache Storage too. Host names are only used for the
+// other hosts of the wider scope.
 function firefoxHostnames(origins) {
   const hosts = new Set();
   for (const o of origins) {
@@ -169,22 +173,68 @@ function firefoxHostnames(origins) {
   return Array.from(hosts);
 }
 
-async function clearStorageAndSWFirefox(origins, opts) {
+// Runs in the page itself (Firefox only), so it reaches exactly that origin's storage.
+function clearThisPage(storage, serviceWorkers) {
+  return (async () => {
+    if (storage) {
+      try { localStorage.clear(); } catch {}
+      try {
+        for (const d of await indexedDB.databases()) {
+          if (!d.name) continue;
+          // An open connection blocks deletion until the page closes it or
+          // reloads; the database goes then.
+          await new Promise(done => {
+            const req = indexedDB.deleteDatabase(d.name);
+            req.onsuccess = req.onerror = req.onblocked = () => done();
+          });
+        }
+      } catch {}
+      try { for (const k of await caches.keys()) await caches.delete(k); } catch {}
+    }
+    if (serviceWorkers) {
+      try { for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister(); } catch {}
+    }
+    return true;
+  })();
+}
+
+async function clearStorageAndSWFirefox(tab, origins, opts) {
+  if (!opts.storage && !opts.serviceWorkers) return { storageCleared: false, swCleared: false };
+  let inPage = false;
+  try {
+    // The page's own code could stall this, so it gets a few seconds.
+    const run = chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: "MAIN",
+      func: clearThisPage,
+      args: [!!opts.storage, !!opts.serviceWorkers]
+    });
+    const timeout = new Promise(done => setTimeout(() => done([]), 5000));
+    const [res] = await Promise.race([run, timeout]);
+    inPage = res?.result === true;
+  } catch {
+    // Some pages can't be scripted (the add-ons site, reader view). The host
+    // names below are the fallback.
+  }
+
+  const current = getOrigin(tab.url);
+  const others = inPage ? origins.filter(o => o !== current) : origins;
   const dataToRemove = {};
   if (opts.storage) {
     dataToRemove.localStorage = true;
     dataToRemove.indexedDB = true;
   }
   if (opts.serviceWorkers) dataToRemove.serviceWorkers = true;
-  if (Object.keys(dataToRemove).length) {
-    await chrome.browsingData.remove({ hostnames: firefoxHostnames(origins) }, dataToRemove);
+  const hostnames = firefoxHostnames(others);
+  if (hostnames.length) {
+    await chrome.browsingData.remove({ hostnames }, dataToRemove);
   }
   return { storageCleared: !!opts.storage, swCleared: !!opts.serviceWorkers };
 }
 
-async function clearStorageAndSW(origins, opts) {
+async function clearStorageAndSW(tab, origins, opts) {
   // opts: { storage:boolean, serviceWorkers:boolean }
-  if (FIREFOX) return clearStorageAndSWFirefox(origins, opts);
+  if (FIREFOX) return clearStorageAndSWFirefox(tab, origins, opts);
   let storageRan = false;
   let swRan = false;
 
@@ -255,6 +305,14 @@ async function hasSiteAccess(url) {
   }
 }
 
+async function hasAllSitesAccess() {
+  try {
+    return await chrome.permissions.contains({ origins: chrome.runtime.getManifest().host_permissions });
+  } catch {
+    return false;
+  }
+}
+
 // ----------------------
 // Toolbar feedback
 // 1. flashBadge: show a blue ✓ briefly
@@ -304,7 +362,13 @@ function showToastedIcon() {
 // scope: "origin" | "family"
 // ----------------------
 async function resetCurrentSite(tab, flags) {
-  if (!tab || !tab.url) throw new Error("No active tab");
+  if (!tab) throw new Error("No active tab");
+  // Without access to a site, Firefox doesn't tell an extension the tab's
+  // address at all. With access to every site, a missing address means a page
+  // that isn't a website.
+  if (!tab.url) {
+    throw new Error((await hasAllSitesAccess()) ? "Unsupported URL" : "No site access");
+  }
 
   const origin = getOrigin(tab.url);
   const hostname = getHostname(tab.url);
@@ -335,7 +399,7 @@ async function resetCurrentSite(tab, flags) {
   }
 
   // 2. Storage + service workers
-  const storageResult = await clearStorageAndSW(targetOrigins, {
+  const storageResult = await clearStorageAndSW(tab, targetOrigins, {
     storage: flags.wipeStorage,
     serviceWorkers: flags.wipeSW
   });

@@ -19,9 +19,10 @@ test("Firefox gets an add-on ID and says no data is collected", () => {
   assert.deepEqual(ff.browser_specific_settings.gecko.data_collection_permissions, { required: ["none"] });
 });
 
-test("Firefox doesn't ask for contentSettings, which it doesn't have", () => {
+test("Firefox drops contentSettings, which it doesn't have, and adds scripting", () => {
   assert.ok(!ff.permissions.includes("contentSettings"));
-  assert.deepEqual(ff.permissions, chrome.permissions.filter(p => p !== "contentSettings"));
+  assert.deepEqual(ff.permissions, [...chrome.permissions.filter(p => p !== "contentSettings"), "scripting"]);
+  assert.ok(!chrome.permissions.includes("scripting"), "Chrome doesn't need it");
 });
 
 test("the Firefox description only promises what Firefox can do", () => {
