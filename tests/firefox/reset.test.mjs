@@ -97,11 +97,12 @@ async function openTab(address, { userContextId = 0, select = false } = {}) {
 }
 
 // Make a tab the browser's selected one without moving Selenium out of the
-// window it's in. Window handles are the tabs' browser IDs.
+// window it's in. Window handles are the remote agent's IDs for each tab's browser.
 async function selectInBrowser(handle) {
   driver.setContext(firefox.Context.CHROME);
   try {
-    await driver.executeScript(`const t = [...gBrowser.tabs].find(t => String(t.linkedBrowser.browserId) === arguments[0]);
+    await driver.executeScript(`const { TabManager } = ChromeUtils.importESModule("chrome://remote/content/shared/TabManager.sys.mjs");
+      const t = [...gBrowser.tabs].find(t => TabManager.getIdForBrowser(t.linkedBrowser) === arguments[0]);
       if (!t) throw new Error("no tab for handle " + arguments[0]);
       gBrowser.selectedTab = t;`, handle);
   } finally {
